@@ -24,6 +24,29 @@ import (
 	"github.com/toolkits/pkg/logger"
 )
 
+// 新增：聚合key结构体
+type AggregationKey struct {
+	RuleName               string
+	NotifyRuleId           int64
+	NotifyConfigChannelId  int64
+	NotifyConfigTemplateId int64
+	NotifyChannelId        int64
+	MessageTemplateId      int64
+}
+
+func (k AggregationKey) String() string {
+	return fmt.Sprintf("%s|%d|%d|%d|%d|%d", k.RuleName, k.NotifyRuleId, k.NotifyConfigChannelId, k.NotifyConfigTemplateId, k.NotifyChannelId, k.MessageTemplateId)
+}
+
+type AggregatedEvents struct {
+	Events          []*models.AlertCurEvent
+	FirstTime       int64
+	NotifyRuleId    int64
+	NotifyConfig    *models.NotifyConfig
+	NotifyChannel   *models.NotifyChannelConfig
+	MessageTemplate *models.MessageTemplate
+}
+
 type Dispatch struct {
 	alertRuleCache      *memsto.AlertRuleCacheType
 	userCache           *memsto.UserCacheType
@@ -50,6 +73,9 @@ type Dispatch struct {
 	Astats *astats.Stats
 
 	RwLock sync.RWMutex
+
+	aggrCache map[string]*AggregatedEvents
+	aggrLock  sync.Mutex
 }
 
 // 创建一个 Notify 实例
@@ -79,12 +105,16 @@ func NewDispatch(alertRuleCache *memsto.AlertRuleCacheType, userCache *memsto.Us
 
 		ctx:    ctx,
 		Astats: astats,
+
+		aggrCache: make(map[string]*AggregatedEvents),
 	}
 
 	pipeline.Init()
 
 	// 设置通知记录回调函数
 	notifyChannelCache.SetNotifyRecordFunc(sender.NotifyRecord)
+
+	notify.StartAggregationSender()
 
 	return notify
 }
@@ -151,42 +181,34 @@ func (e *Dispatch) reloadTpls() error {
 }
 
 func (e *Dispatch) HandleEventWithNotifyRule(eventOrigin *models.AlertCurEvent) {
-
 	if len(eventOrigin.NotifyRuleIds) > 0 {
 		for _, notifyRuleId := range eventOrigin.NotifyRuleIds {
 			// 深拷贝新的 event，避免并发修改 event 冲突
 			eventCopy := eventOrigin.DeepCopy()
-
 			logger.Infof("notify rule ids: %v, event: %+v", notifyRuleId, eventCopy)
 			notifyRule := e.notifyRuleCache.Get(notifyRuleId)
 			if notifyRule == nil {
 				continue
 			}
-
 			if !notifyRule.Enable {
 				continue
 			}
-
 			var processors []models.Processor
 			for _, pipelineConfig := range notifyRule.PipelineConfigs {
 				if !pipelineConfig.Enable {
 					continue
 				}
-
 				eventPipeline := e.eventProcessorCache.Get(pipelineConfig.PipelineId)
 				if eventPipeline == nil {
 					logger.Warningf("notify_id: %d, event:%+v, processor not found", notifyRuleId, eventCopy)
 					continue
 				}
-
 				if !pipelineApplicable(eventPipeline, eventCopy) {
 					logger.Debugf("notify_id: %d, event:%+v, pipeline_id: %d, not applicable", notifyRuleId, eventCopy, pipelineConfig.PipelineId)
 					continue
 				}
-
 				processors = append(processors, e.eventProcessorCache.GetProcessorsById(pipelineConfig.PipelineId)...)
 			}
-
 			for _, processor := range processors {
 				logger.Infof("before processor notify_id: %d, event:%+v, processor:%+v", notifyRuleId, eventCopy, processor)
 				eventCopy, res, err := processor.Process(e.ctx, eventCopy)
@@ -196,20 +218,15 @@ func (e *Dispatch) HandleEventWithNotifyRule(eventOrigin *models.AlertCurEvent) 
 					break
 				}
 			}
-
 			if eventCopy == nil {
-				// 如果 eventCopy 为 nil，说明 eventCopy 被 processor drop 掉了, 不再发送通知
 				continue
 			}
-
-			// notify
 			for i := range notifyRule.NotifyConfigs {
 				err := NotifyRuleMatchCheck(&notifyRule.NotifyConfigs[i], eventCopy)
 				if err != nil {
 					logger.Errorf("notify_id: %d, event:%+v, channel_id:%d, template_id: %d, notify_config:%+v, err:%v", notifyRuleId, eventCopy, notifyRule.NotifyConfigs[i].ChannelID, notifyRule.NotifyConfigs[i].TemplateID, notifyRule.NotifyConfigs[i], err)
 					continue
 				}
-
 				notifyChannel := e.notifyChannelCache.Get(notifyRule.NotifyConfigs[i].ChannelID)
 				messageTemplate := e.messageTemplateCache.Get(notifyRule.NotifyConfigs[i].TemplateID)
 				if notifyChannel == nil {
@@ -217,17 +234,13 @@ func (e *Dispatch) HandleEventWithNotifyRule(eventOrigin *models.AlertCurEvent) 
 					logger.Warningf("notify_id: %d, event:%+v, channel_id:%d, template_id: %d, notify_channel not found", notifyRuleId, eventCopy, notifyRule.NotifyConfigs[i].ChannelID, notifyRule.NotifyConfigs[i].TemplateID)
 					continue
 				}
-
 				if notifyChannel.RequestType != "flashduty" && messageTemplate == nil {
 					logger.Warningf("notify_id: %d, channel_name: %v, event:%+v, template_id: %d, message_template not found", notifyRuleId, notifyChannel.Ident, eventCopy, notifyRule.NotifyConfigs[i].TemplateID)
 					sender.NotifyRecord(e.ctx, []*models.AlertCurEvent{eventCopy}, notifyRuleId, notifyChannel.Name, "", "", errors.New("message_template not found"))
-
 					continue
 				}
-
-				// todo go send
-				// todo 聚合 event
-				go e.sendV2([]*models.AlertCurEvent{eventCopy}, notifyRuleId, &notifyRule.NotifyConfigs[i], notifyChannel, messageTemplate)
+				// 聚合：不直接发送，加入缓存
+				e.AddToAggregation(eventCopy, eventCopy.RuleName, notifyRuleId, &notifyRule.NotifyConfigs[i], notifyChannel, messageTemplate)
 			}
 		}
 	}
@@ -832,4 +845,48 @@ func getSendTarget(customParams map[string]string, sendtos []string) string {
 	}
 
 	return strings.Join(values, ",")
+}
+
+// 新增：聚合事件处理
+func (e *Dispatch) AddToAggregation(event *models.AlertCurEvent, ruleName string, notifyRuleId int64, notifyConfig *models.NotifyConfig, notifyChannel *models.NotifyChannelConfig, messageTemplate *models.MessageTemplate) {
+	key := AggregationKey{
+		RuleName:               ruleName,
+		NotifyRuleId:           notifyRuleId,
+		NotifyConfigChannelId:  notifyConfig.ChannelID,
+		NotifyConfigTemplateId: notifyConfig.TemplateID,
+		NotifyChannelId:        notifyChannel.ID,
+		MessageTemplateId:      messageTemplate.ID,
+	}.String()
+	e.aggrLock.Lock()
+	defer e.aggrLock.Unlock()
+	aggr, ok := e.aggrCache[key]
+	if !ok {
+		aggr = &AggregatedEvents{
+			FirstTime:       time.Now().Unix(),
+			NotifyRuleId:    notifyRuleId,
+			NotifyConfig:    notifyConfig,
+			NotifyChannel:   notifyChannel,
+			MessageTemplate: messageTemplate,
+		}
+		e.aggrCache[key] = aggr
+	}
+	aggr.Events = append(aggr.Events, event)
+}
+
+// 新增：定时批量发送
+func (e *Dispatch) StartAggregationSender() {
+	go func() {
+		for {
+			time.Sleep(10 * time.Second)
+			now := time.Now().Unix()
+			e.aggrLock.Lock()
+			for key, aggr := range e.aggrCache {
+				if now-aggr.FirstTime >= 60 && len(aggr.Events) > 0 {
+					go e.sendV2(aggr.Events, aggr.NotifyRuleId, aggr.NotifyConfig, aggr.NotifyChannel, aggr.MessageTemplate)
+					delete(e.aggrCache, key)
+				}
+			}
+			e.aggrLock.Unlock()
+		}
+	}()
 }
