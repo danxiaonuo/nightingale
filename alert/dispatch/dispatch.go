@@ -24,7 +24,10 @@ import (
 	"github.com/toolkits/pkg/logger"
 )
 
-// 新增：聚合key结构体
+// 聚合Key结构体
+// 用于唯一标识一组聚合事件
+// RuleName + 通知参数
+
 type AggregationKey struct {
 	RuleName               string
 	NotifyRuleId           int64
@@ -37,6 +40,9 @@ type AggregationKey struct {
 func (k AggregationKey) String() string {
 	return fmt.Sprintf("%s|%d|%d|%d|%d|%d", k.RuleName, k.NotifyRuleId, k.NotifyConfigChannelId, k.NotifyConfigTemplateId, k.NotifyChannelId, k.MessageTemplateId)
 }
+
+// 聚合事件结构体
+// 存储同一组聚合事件及其相关参数
 
 type AggregatedEvents struct {
 	Events          []*models.AlertCurEvent
@@ -95,27 +101,21 @@ func NewDispatch(alertRuleCache *memsto.AlertRuleCacheType, userCache *memsto.Us
 		notifyChannelCache:   notifyChannelCache,
 		messageTemplateCache: messageTemplateCache,
 		eventProcessorCache:  eventProcessorCache,
-
-		alerting: alerting,
-
-		Senders:          make(map[string]sender.Sender),
-		tpls:             make(map[string]*template.Template),
-		ExtraSenders:     make(map[string]sender.Sender),
-		BeforeSenderHook: func(*models.AlertCurEvent) bool { return true },
-
-		ctx:    ctx,
-		Astats: astats,
-
-		aggrCache: make(map[string]*AggregatedEvents),
+		alerting:             alerting,
+		Senders:              make(map[string]sender.Sender),
+		tpls:                 make(map[string]*template.Template),
+		ExtraSenders:         make(map[string]sender.Sender),
+		BeforeSenderHook:     func(*models.AlertCurEvent) bool { return true },
+		ctx:                  ctx,
+		Astats:               astats,
+		aggrCache:            make(map[string]*AggregatedEvents), // 初始化聚合缓存
 	}
 
 	pipeline.Init()
-
 	// 设置通知记录回调函数
 	notifyChannelCache.SetNotifyRecordFunc(sender.NotifyRecord)
 
 	notify.StartAggregationSender()
-
 	return notify
 }
 
@@ -875,7 +875,7 @@ func (e *Dispatch) AddToAggregation(event *models.AlertCurEvent, ruleName string
 	aggr.Events = append(aggr.Events, event)
 }
 
-// 新增：定时批量发送
+// 新增：定时批量发送协程
 func (e *Dispatch) StartAggregationSender() {
 	go func() {
 		for {
