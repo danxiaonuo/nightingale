@@ -200,7 +200,7 @@ def build_email(one: dict, recipients: list[str]) -> MIMEText:
     - 告警描述用 <ul> 展示，自动去重
     """
     status_flag = "﹝恢复﹞" if one["is_recover"] else "﹝告警﹞"
-    subject = f"监控告警 🔔 {status_flag} {one['group']}- {one['title']}"
+    subject = f"监控告警 📢 {status_flag} {one['group']}- {one['title']}"
     send_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
     # 去重并拼接主机地址为一行（用分号隔开）
