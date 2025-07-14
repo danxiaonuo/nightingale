@@ -543,6 +543,20 @@ func (rt *Router) alertRulePutFields(c *gin.Context) {
 			}
 		}
 
+		// 检测是否是批量更新通知规则的字段，如果是清理掉旧版本的配置
+		for k := range f.Fields {
+			if k == "notify_rule_ids" {
+				f.Fields["notify_version"] = 1
+				f.Fields["notify_channels"] = ""
+				f.Fields["notify_groups"] = ""
+				f.Fields["callbacks"] = ""
+			}
+
+			if k == "notify_channels" {
+				f.Fields["notify_version"] = 0
+			}
+		}
+
 		for k, v := range f.Fields {
 			// 检查 v 是否为各种切片类型
 			switch v.(type) {
