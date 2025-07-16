@@ -1,0 +1,20 @@
+{{- if $event.IsRecovered -}}
+{{- if ne $event.Cate "host" -}}
+告警集群: {{$event.Cluster}}{{end}}   
+告警级别: S{{$event.Severity}} 恢复   
+告警名称: {{$event.RuleName}}  
+业务分组: {{$labels.group}} 
+主机地址: {{$labels.instance}}  
+恢复时间: {{timeformat $event.LastEvalTime}}  
+告警描述: {{$event.RuleNote}}
+{{- else }}
+{{- if ne $event.Cate "host"}}   
+告警集群: {{$event.Cluster}}{{end}}   
+告警级别: S{{$event.Severity}} 告警   
+告警名称: {{$event.RuleName}}  
+业务分组: {{$labels.group}} 
+主机地址: {{$labels.instance}}
+触发时值: {{$event.TriggerValue}}      
+触发时间: {{timeformat $event.TriggerTime}}       
+{{if $event.RuleNote }}告警描述: {{$event.RuleNote}}{{end}}   
+{{- end -}}
