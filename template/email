@@ -1,0 +1,84 @@
+content
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta http-equiv="X-UA-Compatible" content="ie=edge">
+  <title>信息化监控告警</title>
+  <style type="text/css">
+    .wrapper {
+      background-color: #f8f8f8;
+      padding: 15px;
+      height: 100%;
+    }
+    .main {
+      width: 600px;
+      padding: 30px;
+      margin: 0 auto;
+      background-color: #fff;
+      font-size: 12px;
+      font-family: verdana,'Microsoft YaHei',Consolas,'Deja Vu Sans Mono','Bitstream Vera Sans Mono';
+    }
+    .content-line {
+      margin: 8px 0;
+      color: #333;
+    }
+    .content-line strong {
+      color: #000;
+    }
+    .body {
+      margin-top: 24px;
+    }
+    .footer {
+      margin-top: 20px;
+      font-size: 12px;
+      text-align: right;
+      color: #999;
+      font-style: italic;
+    }
+    a {
+      color: #2D77EE;
+      text-decoration: none;
+    }
+    a:hover {
+      color: #1A5FDB;
+    }
+  </style>
+</head>
+<body>
+  <div class="wrapper">
+    <div class="main">
+      <div class="body">
+        {{- if $event.IsRecovered -}}
+          {{- if ne $event.Cate "host" -}}
+            <div class="content-line"><strong>告警集群:</strong> {{$event.Cluster}}</div>
+          {{- end}}
+          <div class="content-line"><strong>告警级别:</strong> S{{$event.Severity}} 恢复</div>
+          <div class="content-line"><strong>告警名称:</strong> {{$event.RuleName}}</div>
+          <div class="content-line"><strong>业务分组:</strong> {{$labels.group}}</div>
+          <div class="content-line"><strong>主机地址:</strong> {{$labels.instance}}</div>
+          <div class="content-line"><strong>恢复时间:</strong> {{timeformat $event.LastEvalTime}}</div>
+          <div class="content-line"><strong>发送时间:</strong> {{timestamp}}</div>
+          <div class="content-line"><strong>告警描述:</strong> <span style="color: green;">{{$event.RuleNote}}</span></div>
+        {{- else }}
+          {{- if ne $event.Cate "host" -}}
+            <div class="content-line"><strong>告警集群:</strong> {{$event.Cluster}}</div>
+          {{- end}}
+          <div class="content-line"><strong>告警级别:</strong> S{{$event.Severity}} 告警</div>
+          <div class="content-line"><strong>告警名称:</strong> {{$event.RuleName}}</div>
+          <div class="content-line"><strong>业务分组:</strong> {{$labels.group}}</div>
+          <div class="content-line"><strong>主机地址:</strong> {{$labels.instance}}</div>
+          <div class="content-line"><strong>触发时间:</strong> {{timeformat $event.TriggerTime}}</div>
+          <div class="content-line"><strong>发送时间:</strong> {{timestamp}}</div>
+          {{- if $event.RuleNote }}
+          <div class="content-line"><strong>告警描述:</strong> <span style="color: red;">{{$event.RuleNote}}</span></div>
+          {{- end}}
+        {{- end }}
+      </div>
+    </div>
+  </div>
+</body>
+</html>
+
+subject
+信息化监控告警 {{- if $event.IsRecovered }}🔔 ﹝恢复﹞ {{$event.RuleName}}{{- else }}🔔 ﹝告警﹞ {{$event.RuleName}}{{- end -}}
