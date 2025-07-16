@@ -179,7 +179,7 @@ def send_cards(app_id: str, app_secret: str, sendtos: List[str],
     for item in items:
         is_recover = item["is_recover"]
         status_flag = "﹝恢复﹞" if is_recover else "﹝告警﹞"
-        header_text = f"监控告警 🔥 {status_flag} {item['group']}- {item['title']}"
+        header_text = f"信息化监控告警 🔥 {status_flag} {item['group']}- {item['title']}"
         tpl = "green" if is_recover else "red"
         md = build_markdown(item)
 

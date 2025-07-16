@@ -208,9 +208,9 @@ def current_timestamp_str():
 
 def send_sms(content, params, sendto):
     """调用短信发送接口"""
-    url = params.get('url', '')
-    tid = params.get('tid', '')
-    sms_type = params.get('type', '')
+    url = params.get('url', 'http://otherqxb.xxx.com')
+    tid = params.get('tid', '000')
+    sms_type = params.get('type', '0')
 
     if not url.startswith(('http://', 'https://')):
         logger.warning("⚠️ URL 缺少 http/https 前缀，自动补全")

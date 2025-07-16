@@ -211,7 +211,7 @@ def mk_markdown_body(item: dict) -> str:
 def build_card(item: dict) -> dict:
     """生成飞书互动卡片的完整 payload"""
     status_flag = "﹝恢复﹞" if item["is_recover"] else "﹝告警﹞"
-    title_text = f"监控告警 🔥 {status_flag} {item['group']}- {item['title']}"
+    title_text = f"信息化监控告警 🔥 {status_flag} {item['group']}- {item['title']}"
     template_color = GREEN if item["is_recover"] else RED
 
     # 生成"告警详情"跳转链接
