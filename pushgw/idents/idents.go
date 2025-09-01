@@ -13,6 +13,7 @@ import (
 	"github.com/ccfos/nightingale/v6/pushgw/pstat"
 	"github.com/ccfos/nightingale/v6/storage"
 
+	"github.com/toolkits/pkg/concurrent/semaphore"
 	"github.com/toolkits/pkg/logger"
 	"github.com/toolkits/pkg/slice"
 )
@@ -23,6 +24,7 @@ type Set struct {
 	redis   storage.Redis
 	ctx     *ctx.Context
 	configs pconf.Pushgw
+	sema    *semaphore.Semaphore
 }
 
 func New(ctx *ctx.Context, redis storage.Redis, configs pconf.Pushgw) *Set {
@@ -32,6 +34,7 @@ func New(ctx *ctx.Context, redis storage.Redis, configs pconf.Pushgw) *Set {
 		ctx:     ctx,
 		configs: configs,
 	}
+	set.sema = semaphore.NewSemaphore(configs.UpdateTargetByUrlConcurrency)
 
 	set.Init()
 	return set
@@ -113,8 +116,26 @@ func (s *Set) UpdateTargets(lst []string, now int64) error {
 			Lst: lst,
 			Now: now,
 		}
-		err := poster.PostByUrls(s.ctx, "/v1/n9e/target-update", t)
-		return err
+
+		if !s.sema.TryAcquire() {
+			logger.Warningf("update_targets: update target by url concurrency limit, skip update target: %v", lst)
+			return nil // 达到并发上限，放弃请求，只是页面上的机器时间不更新，不影响机器失联告警，降级处理下
+		}
+
+		go func() {
+			defer s.sema.Release()
+			// 修改为异步发送，防止机器太多，每个请求耗时比较长导致机器心跳时间更新不及时
+			err := poster.PostByUrls(s.ctx, "/v1/n9e/target-update", t)
+			if err != nil {
+				logger.Errorf("failed to post target update: %v", err)
+			}
+		}()
+		return nil
+	}
+
+	if s.configs.UpdateDBTargetTimestampDisable {
+		// 如果 mysql 压力太大，关闭更新 db 的操作
+		return nil
 	}
 
 	// there are some idents not found in db, so insert them
@@ -133,14 +154,32 @@ func (s *Set) UpdateTargets(lst []string, now int64) error {
 	}
 
 	// 从批量更新一批机器的时间戳，改成逐台更新，是为了避免批量更新时，mysql的锁竞争问题
-	for i := 0; i < len(exists); i++ {
-		err = s.ctx.DB.Exec("UPDATE target SET update_at = ? WHERE ident = ?", now, exists[i]).Error
-		if err != nil {
-			logger.Error("upsert_target: failed to update target:", exists[i], "error:", err)
+	start := time.Now()
+	duration := time.Since(start).Seconds()
+	if len(exists) > 0 {
+		sema := semaphore.NewSemaphore(s.configs.UpdateDBTargetConcurrency)
+		wg := sync.WaitGroup{}
+		for i := 0; i < len(exists); i++ {
+			sema.Acquire()
+			wg.Add(1)
+			go func(ident string) {
+				defer sema.Release()
+				defer wg.Done()
+				s.updateDBTargetTs(ident, now)
+			}(exists[i])
 		}
+		wg.Wait()
 	}
+	pstat.DBOperationLatency.WithLabelValues("update_targets_ts").Observe(duration)
 
 	return nil
+}
+
+func (s *Set) updateDBTargetTs(ident string, now int64) {
+	err := s.ctx.DB.Exec("UPDATE target SET update_at = ? WHERE ident = ?", now, ident).Error
+	if err != nil {
+		logger.Error("update_target: failed to update target:", ident, "error:", err)
+	}
 }
 
 func (s *Set) updateTargetsUpdateTs(lst []string, now int64, redis storage.Redis) error {
