@@ -14,19 +14,19 @@ prebuild:
 	echo "front-end file download and embedding completed."
 
 build:
-	go build -ldflags "-w -s -X github.com/ccfos/nightingale/v6/pkg/version.Version=$(RELEASE_VERSION)" -o n9e ./cmd/center/main.go
+	CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags "-w -s -X github.com/ccfos/nightingale/v6/pkg/version.Version=$(RELEASE_VERSION)" -o n9e ./cmd/center/main.go
 
 build-edge:
-	go build -ldflags "-w -s -X github.com/ccfos/nightingale/v6/pkg/version.Version=$(RELEASE_VERSION)" -o n9e-edge ./cmd/edge/
+	CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags "-w -s -X github.com/ccfos/nightingale/v6/pkg/version.Version=$(RELEASE_VERSION)" -o n9e-edge ./cmd/edge/
 
 build-alert:
-	go build -ldflags "-w -s -X github.com/ccfos/nightingale/v6/pkg/version.Version=$(RELEASE_VERSION)" -o n9e-alert ./cmd/alert/main.go
+	CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags "-w -s -X github.com/ccfos/nightingale/v6/pkg/version.Version=$(RELEASE_VERSION)" -o n9e-alert ./cmd/alert/main.go
 
 build-pushgw:
-	go build -ldflags "-w -s -X github.com/ccfos/nightingale/v6/pkg/version.Version=$(RELEASE_VERSION)" -o n9e-pushgw ./cmd/pushgw/main.go
+	CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags "-w -s -X github.com/ccfos/nightingale/v6/pkg/version.Version=$(RELEASE_VERSION)" -o n9e-pushgw ./cmd/pushgw/main.go
 
 build-cli: 
-	go build -ldflags "-w -s -X github.com/ccfos/nightingale/v6/pkg/version.Version=$(RELEASE_VERSION)" -o n9e-cli ./cmd/cli/main.go
+	CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags "-w -s -X github.com/ccfos/nightingale/v6/pkg/version.Version=$(RELEASE_VERSION)" -o n9e-cli ./cmd/cli/main.go
 
 run:
 	nohup ./n9e > n9e.log 2>&1 &
