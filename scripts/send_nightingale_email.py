@@ -104,7 +104,8 @@ def aggregate_events(payload: dict) -> list[dict]:
         except Exception:
             severity = 99
 
-        ts = ev.get("trigger_time") or ev.get("last_eval_time")
+        # 恢复事件使用 last_eval_time，告警事件使用 trigger_time
+        ts = ev.get("last_eval_time") if is_recover else ev.get("trigger_time")
         time_str = datetime.fromtimestamp(int(ts)).strftime("%Y-%m-%d %H:%M:%S") if ts else "N/A"
 
         host = tags.get("instance", "N/A")
