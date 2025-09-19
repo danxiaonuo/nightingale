@@ -80,7 +80,8 @@ def aggregate_events(payload: Dict[str, Any]) -> List[Dict[str, Any]]:
         inst = tags.get('instance', '')
         host_name = tags.get('name', '')  # 新增：获取主机名称
         note = ev.get('rule_note') or ev.get('annotations', {}).get('description', '')
-        ts = ev.get('trigger_time') or ev.get('last_eval_time', 0)
+        # 恢复事件使用 last_eval_time，告警事件使用 trigger_time
+        ts = ev.get('last_eval_time', 0) if is_recover else ev.get('trigger_time', 0)
         tstr = timeformat(int(ts)) if ts else ''
         sev = ev.get('severity', 0)
 
