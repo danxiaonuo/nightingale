@@ -87,7 +87,8 @@ def aggregate_events(payload):
         inst = tags.get('instance')
         host_name = tags.get('name', '')  # 新增：获取主机名称
         rule_note = ev.get('rule_note') or ev.get('annotations', {}).get('description', '')
-        tm_ts = ev.get('trigger_time') or ev.get('last_eval_time')
+        # 恢复事件使用 last_eval_time，告警事件使用 trigger_time
+        tm_ts = ev.get('last_eval_time') if is_recover else ev.get('trigger_time')
         time_str = datetime.fromtimestamp(int(tm_ts)).strftime('%Y-%m-%d %H:%M:%S') if tm_ts else 'N/A'
         severity = ev.get('severity')
 
